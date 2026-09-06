@@ -115,8 +115,9 @@ gh secret set AWS_ROLE_ARN    --body "$ROLE_ARN"
 gh secret set ARTIFACT_BUCKET --body "$BUCKET"
 ```
 
-The workflow's first step fails with a named message if either is unset, or if
-either is the string `None`.
+Read them from the stack rather than typing them, and check neither is `None` —
+CloudFormation returns that for a stack whose outputs are not yet populated, and
+storing it produces a confusing OIDC failure much later.
 
 Neither value is actually a credential — the role ARN is useless without the OIDC
 trust policy, which pins this repository and branch. **No long-lived AWS

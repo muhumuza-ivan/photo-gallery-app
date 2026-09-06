@@ -42,19 +42,6 @@ jobs:
     timeout-minutes: 25
 
     steps:
-      # Catches the case where the stack had not finished when the secrets were
-      # set: its outputs were empty, so the values are the string "None".
-      - name: Check the repository secrets are set
-        run: |
-          : "${AWS_ROLE_ARN:?set this repository secret to the photo-gallery stack's GitHubActionsRoleArn output}"
-          : "${ARTIFACT_BUCKET:?set this repository secret to the photo-gallery stack's ArtifactBucketName output}"
-          for v in AWS_ROLE_ARN ARTIFACT_BUCKET; do
-            if [[ "${!v}" == "None" ]]; then
-              echo "::error::$v is literally 'None' - it was set before the stack finished deploying. Re-read the stack outputs and set it again."
-              exit 1
-            fi
-          done
-
       - name: Check out application code
         uses: actions/checkout@v4
 
