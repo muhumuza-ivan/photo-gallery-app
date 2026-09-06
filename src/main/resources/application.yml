@@ -36,6 +36,16 @@ spring:
 server:
   port: ${SERVER_PORT:8080}
   shutdown: graceful
+  servlet:
+    session:
+      # Cookies only. Without this, Tomcat appends ';jsessionid=...' to the URL
+      # on the redirect after an upload, because it cannot yet tell whether the
+      # browser accepts cookies. Spring Boot 3 parses that ';' as a matrix
+      # variable, so '/;jsessionid=x' no longer matches @GetMapping("/") - the
+      # request falls through to Spring Boot's welcome-page handler, which
+      # renders index.html with an EMPTY model, and the template dies on the
+      # first reference to ${photos}.
+      tracking-modes: cookie
   # The ALB terminates the client connection; keep-alive slightly above the
   # 60s ALB idle timeout avoids races on connection reuse.
   tomcat:
