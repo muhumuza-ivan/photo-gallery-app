@@ -1,0 +1,12 @@
+# Consumed by the CodeDeployToECS pipeline action. CodePipeline substitutes
+# <TASK_DEFINITION> with the ARN of the revision it registered from taskdef.json.
+version: 0.0
+Resources:
+  - TargetService:
+      Type: AWS::ECS::Service
+      Properties:
+        TaskDefinition: <TASK_DEFINITION>
+        LoadBalancerInfo:
+          ContainerName: photo-gallery
+          ContainerPort: 8080
+        PlatformVersion: LATEST

@@ -1,0 +1,71 @@
+spring:
+  application:
+    name: photo-gallery
+
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:gallery}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 1
+      connection-timeout: 10000
+
+  jpa:
+    hibernate:
+      # Flyway owns the schema. Hibernate only validates that it matches.
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+
+  servlet:
+    multipart:
+      max-file-size: ${MAX_UPLOAD_MB:10}MB
+      max-request-size: ${MAX_UPLOAD_MB:10}MB
+
+  thymeleaf:
+    cache: true
+
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+  # The ALB terminates the client connection; keep-alive slightly above the
+  # 60s ALB idle timeout avoids races on connection reuse.
+  tomcat:
+    keep-alive-timeout: 65000
+
+gallery:
+  bucket: ${S3_BUCKET:}
+  cloudfront-domain: ${CLOUDFRONT_DOMAIN:}
+  max-upload-mb: ${MAX_UPLOAD_MB:10}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+
+logging:
+  level:
+    root: INFO
+    com.amalitech.gallery: INFO
+  pattern:
+    # Plain single-line output; CloudWatch Logs handles timestamps and streams.
+    console: '%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n'

@@ -1,0 +1,6 @@
+target/
+taskdef.json
+deploy-bundle.zip
+.idea/
+*.iml
+.DS_Store

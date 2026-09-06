@@ -1,0 +1,156 @@
+name: Build and deploy
+
+# Push to main -> build image -> push :sha -> publish deploy bundle -> push
+# :latest. The final :latest push is what EventBridge listens for, so the
+# taskdef and appspec are always in S3 before the pipeline starts.
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  workflow_dispatch:
+
+# Only the OIDC token is needed. No AWS access keys exist in this repository.
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+# Both repository secrets come from the photo-gallery stack's outputs - see the
+# guide. Nothing about the AWS account is reconstructed here.
+#
+# Neither value is a credential: the role ARN is useless without the OIDC trust
+# policy, which pins this repository and branch. They are secrets by policy, not
+# by necessity - no long-lived AWS credentials exist in this repository.
+env:
+  AWS_REGION: eu-west-1
+  AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+  ARTIFACT_BUCKET: ${{ secrets.ARTIFACT_BUCKET }}
+  ECR_REPOSITORY: photo-gallery
+  CONTAINER_NAME: photo-gallery
+  TASK_FAMILY: photo-gallery
+  ARTIFACT_KEY: deploy/photo-gallery-deploy.zip
+
+jobs:
+  build-and-deploy:
+    name: Build image and trigger deployment
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      # Catches the case where the stack had not finished when the secrets were
+      # set: its outputs were empty, so the values are the string "None".
+      - name: Check the repository secrets are set
+        run: |
+          : "${AWS_ROLE_ARN:?set this repository secret to the photo-gallery stack's GitHubActionsRoleArn output}"
+          : "${ARTIFACT_BUCKET:?set this repository secret to the photo-gallery stack's ArtifactBucketName output}"
+          for v in AWS_ROLE_ARN ARTIFACT_BUCKET; do
+            if [[ "${!v}" == "None" ]]; then
+              echo "::error::$v is literally 'None' - it was set before the stack finished deploying. Re-read the stack outputs and set it again."
+              exit 1
+            fi
+          done
+
+      - name: Check out application code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: maven
+
+      - name: Build and test
+        run: mvn -B verify
+
+      # ---- OIDC: exchange the GitHub token for short-lived AWS credentials ----
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          role-session-name: gh-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Confirm the assumed identity
+        run: aws sts get-caller-identity
+
+      - name: Log in to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build image and push the immutable tag
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          IMAGE="$REGISTRY/$ECR_REPOSITORY:$SHA"
+          docker build -t "$IMAGE" -t "$REGISTRY/$ECR_REPOSITORY:latest" .
+          docker push "$IMAGE"
+          echo "IMAGE_URI=$IMAGE" >> "$GITHUB_ENV"
+
+      # ---- Render taskdef.json from the live definition -----------------------
+      # Reading the current revision and swapping only the image keeps every
+      # other setting (roles, secrets, log config) owned by CloudFormation.
+      # There is no duplicated infrastructure detail in this repository.
+      - name: Render task definition
+        id: render
+        run: |
+          set -euo pipefail
+          # Bootstrap case: the infrastructure stack has not been created at all
+          # yet, so there is no task family to render from. Push the image and
+          # stop. Once the stack exists this branch is not taken again - the task
+          # definition is registered in stage 'foundation', before any image.
+          if ! aws ecs describe-task-definition --task-definition "$TASK_FAMILY" \
+                 --query 'taskDefinition.family' --output text >/dev/null 2>&1; then
+            echo "bootstrap=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Task family '$TASK_FAMILY' not registered yet. Image pushed; set DeployStage: full in the infra repo, then re-run."
+            exit 0
+          fi
+          echo "bootstrap=false" >> "$GITHUB_OUTPUT"
+
+          aws ecs describe-task-definition \
+            --task-definition "$TASK_FAMILY" \
+            --query 'taskDefinition' \
+            --output json > current-taskdef.json
+
+          jq --arg IMAGE "$IMAGE_URI" --arg NAME "$CONTAINER_NAME" '
+            del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)
+            | .containerDefinitions |= map(
+                if .name == $NAME then .image = $IMAGE else . end)
+          ' current-taskdef.json > taskdef.json
+
+          echo "Deploying image:"
+          jq -r '.containerDefinitions[].image' taskdef.json
+
+      - name: Publish deploy bundle to S3
+        if: steps.render.outputs.bootstrap == 'false'
+        run: |
+          set -euo pipefail
+          zip -q -j deploy-bundle.zip taskdef.json appspec.yaml
+          aws s3 cp deploy-bundle.zip "s3://${ARTIFACT_BUCKET}/${ARTIFACT_KEY}"
+          echo "Published s3://${ARTIFACT_BUCKET}/${ARTIFACT_KEY}"
+
+      # ---- The trigger. Pushed last, on purpose. ------------------------------
+      - name: Push :latest to start the blue/green deployment
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: docker push "$REGISTRY/$ECR_REPOSITORY:latest"
+
+      - name: Summary
+        run: |
+          {
+            echo "### Deployment triggered"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Image | \`$IMAGE_URI\` |"
+            echo "| Commit | \`${{ github.sha }}\` |"
+            echo "| Trigger | ECR push of \`:latest\` -> EventBridge -> CodePipeline |"
+          } >> "$GITHUB_STEP_SUMMARY"

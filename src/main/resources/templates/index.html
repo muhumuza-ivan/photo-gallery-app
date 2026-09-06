@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Contact Sheet</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;800&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    /* ---------------------------------------------------------------
+       Palette: a darkroom bench. Prints are the light mass, the sheet
+       behind them is dark, and safelight amber appears only where the
+       eye should go next.
+       --------------------------------------------------------------- */
+    :root {
+      --sheet:     #16130F;
+      --sheet-lit: #201A14;
+      --paper:     #F2EDE3;
+      --paper-dim: #DED6C8;
+      --emulsion:  #2A241C;
+      --ink:       #1A1611;
+      --muted:     #8E8478;
+      --safelight: #D98A2B;
+      --edge:      rgba(242, 237, 227, 0.14);
+
+      --frame-radius: 2px;
+      --step: clamp(18px, 2.2vw, 30px);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 0 var(--step) calc(var(--step) * 3);
+      background: var(--sheet);
+      /* faint vertical grain, like the backing of a proof sheet */
+      background-image: repeating-linear-gradient(
+        90deg, rgba(255,255,255,0.014) 0 1px, transparent 1px 4px);
+      color: var(--paper);
+      font-family: "Archivo", system-ui, -apple-system, sans-serif;
+      font-size: 16px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ---------------- masthead ---------------- */
+    header {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: calc(var(--step) * 1.8) 0 var(--step);
+      border-bottom: 1px solid var(--edge);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    h1 {
+      margin: 0;
+      font-weight: 800;
+      font-size: clamp(30px, 5.5vw, 56px);
+      letter-spacing: -0.035em;
+      line-height: 0.92;
+      text-transform: uppercase;
+    }
+
+    .roll-meta {
+      font-family: "Courier Prime", "Courier New", monospace;
+      font-size: 12px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+      text-align: right;
+    }
+    .roll-meta b { color: var(--paper-dim); font-weight: 700; }
+
+    /* ---------------- notices ---------------- */
+    .notice {
+      max-width: 1180px;
+      margin: var(--step) auto 0;
+      padding: 12px 16px;
+      font-family: "Courier Prime", monospace;
+      font-size: 13px;
+      border-left: 3px solid var(--safelight);
+      background: var(--sheet-lit);
+    }
+    .notice.is-error { border-left-color: #C2503C; }
+
+    /* ---------------- the sheet ---------------- */
+    .sheet {
+      max-width: 1180px;
+      margin: var(--step) auto 0;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(272px, 1fr));
+      gap: calc(var(--step) * 1.1);
+    }
+
+    /* Signature: every cell is a film frame. Sprocket perforations are drawn
+       in the top and bottom margins with a repeating gradient, so each print
+       reads as one exposure on a strip rather than a card in a grid. */
+    .frame {
+      background: var(--paper);
+      color: var(--ink);
+      border-radius: var(--frame-radius);
+      padding: 14px 12px;
+      position: relative;
+      animation: develop 520ms cubic-bezier(0.2, 0.7, 0.3, 1) backwards;
+    }
+    .frame::before,
+    .frame::after {
+      content: "";
+      position: absolute;
+      left: 12px;
+      right: 12px;
+      height: 5px;
+      background-image: repeating-linear-gradient(
+        90deg, var(--emulsion) 0 7px, transparent 7px 16px);
+      opacity: 0.28;
+    }
+    .frame::before { top: 5px; }
+    .frame::after  { bottom: 5px; }
+
+    .frame:nth-child(1) { animation-delay: 0ms; }
+    .frame:nth-child(2) { animation-delay: 60ms; }
+    .frame:nth-child(3) { animation-delay: 120ms; }
+    .frame:nth-child(4) { animation-delay: 180ms; }
+    .frame:nth-child(5) { animation-delay: 240ms; }
+    .frame:nth-child(n+6) { animation-delay: 300ms; }
+
+    @keyframes develop {
+      from { opacity: 0; transform: translateY(10px); filter: contrast(0.6); }
+      to   { opacity: 1; transform: none; filter: none; }
+    }
+
+    .frame img {
+      display: block;
+      width: 100%;
+      aspect-ratio: 4 / 3;
+      object-fit: cover;
+      background: var(--paper-dim);
+      margin: 6px 0 10px;
+    }
+
+    .caption {
+      font-family: "Courier Prime", monospace;
+      font-size: 13.5px;
+      line-height: 1.45;
+      color: var(--ink);
+      overflow-wrap: anywhere;
+    }
+
+    .frame-index {
+      font-family: "Courier Prime", monospace;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      color: var(--emulsion);
+      opacity: 0.65;
+      display: flex;
+      justify-content: space-between;
+      padding: 0 2px 2px;
+    }
+
+    /* ---------------- the next exposure ---------------- */
+    /* The upload form is not a separate panel: it is the next empty frame on
+       the same strip, which is also the empty state. */
+    .frame--next {
+      background: transparent;
+      color: var(--paper);
+      border: 1px dashed var(--edge);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      justify-content: center;
+      min-height: 300px;
+    }
+    .frame--next::before, .frame--next::after { display: none; }
+
+    .frame--next .eyebrow {
+      font-family: "Courier Prime", monospace;
+      font-size: 11px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--safelight);
+    }
+    .frame--next h2 {
+      margin: 0 0 4px;
+      font-size: 19px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+
+    label {
+      display: block;
+      font-family: "Courier Prime", monospace;
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 5px;
+    }
+
+    input[type="file"], textarea {
+      width: 100%;
+      font-family: "Courier Prime", monospace;
+      font-size: 13px;
+      color: var(--paper);
+      background: var(--sheet-lit);
+      border: 1px solid var(--edge);
+      border-radius: var(--frame-radius);
+      padding: 9px 10px;
+    }
+    textarea { resize: vertical; min-height: 62px; }
+    input[type="file"]::file-selector-button {
+      font-family: "Courier Prime", monospace;
+      font-size: 12px;
+      color: var(--ink);
+      background: var(--paper-dim);
+      border: 0;
+      border-radius: 2px;
+      padding: 5px 10px;
+      margin-right: 10px;
+      cursor: pointer;
+    }
+
+    button {
+      margin-top: 2px;
+      width: 100%;
+      font-family: "Archivo", sans-serif;
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--ink);
+      background: var(--safelight);
+      border: 0;
+      border-radius: var(--frame-radius);
+      padding: 12px;
+      cursor: pointer;
+      transition: filter 140ms ease;
+    }
+    button:hover { filter: brightness(1.1); }
+
+    .hint {
+      font-family: "Courier Prime", monospace;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    :focus-visible {
+      outline: 2px solid var(--safelight);
+      outline-offset: 2px;
+    }
+
+    footer {
+      max-width: 1180px;
+      margin: calc(var(--step) * 2) auto 0;
+      padding-top: var(--step);
+      border-top: 1px solid var(--edge);
+      font-family: "Courier Prime", monospace;
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .frame { animation: none; }
+      button { transition: none; }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>Contact<br>Sheet</h1>
+    <p class="roll-meta">
+      <b th:text="${#lists.size(photos)}">0</b> frames exposed<br>
+      Stored in S3 &middot; Served by CloudFront
+    </p>
+  </header>
+
+  <p class="notice" th:if="${message}" th:text="${message}"></p>
+  <p class="notice is-error" th:if="${error}" th:text="${error}"></p>
+
+  <main class="sheet">
+
+    <!-- The next exposure: upload slot and empty state in one object -->
+    <section class="frame frame--next">
+      <p class="eyebrow">Next exposure</p>
+      <h2 th:text="${#lists.isEmpty(photos)} ? 'Nothing on this roll yet' : 'Add a photo'">Add a photo</h2>
+      <form method="post" action="/photos" enctype="multipart/form-data">
+        <div>
+          <label for="file">Image file</label>
+          <input type="file" id="file" name="file" accept="image/jpeg,image/png,image/webp,image/gif" required>
+        </div>
+        <div style="margin-top:10px">
+          <label for="description">Description</label>
+          <textarea id="description" name="description" maxlength="500"
+                    placeholder="What is in the frame?" required></textarea>
+        </div>
+        <button type="submit">Add photo</button>
+      </form>
+      <p class="hint">
+        JPEG, PNG, WebP or GIF up to <span th:text="${maxUploadMb}">10</span> MB.
+      </p>
+    </section>
+
+    <!-- Frames are numbered from the newest backwards, the way a developed
+         roll is read: the highest number is the most recent exposure. -->
+    <article class="frame" th:each="photo, iter : ${photos}">
+      <div class="frame-index">
+        <span th:text="'▸ ' + ${#numbers.formatInteger(#lists.size(photos) - iter.index, 3)}">▸ 001</span>
+        <span th:text="${photo.displayDate}">01 Jan</span>
+      </div>
+      <img th:src="|${cdn}/${photo.s3Key}|"
+           th:alt="${photo.description}"
+           loading="lazy" decoding="async">
+      <p class="caption" th:text="${photo.description}">Caption</p>
+    </article>
+
+  </main>
+
+  <footer>
+    ECS Fargate &middot; private subnets &middot; RDS PostgreSQL Multi-AZ
+  </footer>
+
+</body>
+</html>
